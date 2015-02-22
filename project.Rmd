@@ -1,0 +1,155 @@
+---
+title: "Predicting the Quality of Weight Lifting Exercises"
+author: "Miroslav Micic"
+date: "February 11, 2015"
+output: html_document
+---
+
+### Executive Summary
+
+We use Human Activity Recognition (HAR) data to predict the quality of barbell lifts exercises. We train two prediction models. One based on Classification Tree algorithm and second on Random Forest algorithm. The Random Forest model performs better on the validation set of data with accuracy of 99.49 % and the out of sample error of 0.51 %. When applied to the test set of data, it correctly predicts the quality classes of the exercises.
+
+### Exploratory Data Analysis
+
+Data used in this project contains parameters collected by the wearable accelerometers used by test subjects in order to investigate the quality of execution of a set of 10 repetitions of the Unilateral Dumbbell Biceps Curl. There are five classes of quality: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). 
+
+The training data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r reading_data, message=FALSE}
+  library(caret)
+  library(randomForest)
+  trainExplore <- read.csv("pml-training.csv", header = TRUE, na.strings = " ")
+  testSet <- read.csv("pml-testing.csv", header = TRUE, na.strings = " ")
+```
+
+We read in data replacing NA values with space. Variables containing NAs are low variability variables and can be processed with nearZeroVar function:
+
+```{r removing_low_variability}
+  nzv <- nearZeroVar(trainExplore,saveMetrics=TRUE)
+  trainExplore <- trainExplore[,nzv$nzv == FALSE]
+  testSet <- testSet[,nzv$nzv == FALSE]
+```
+
+Here we have removed low variability predictors because they are not useful covariates.
+First five predictors are also not useful and we remove them too:
+
+```{r extra_removing}
+  del_col <- grepl("X|user_name|timestamp", colnames(trainExplore))
+  trainExplore <- trainExplore[, !del_col]
+  testSet <- testSet[, !del_col]
+  names(trainExplore)
+```
+
+First 53 variables we will use as predictors where the outcome is the quality of the exercise represented by the last variable ("classe").
+
+
+
+## Building Models 
+
+We built two models: Classification Tree with rpart() function, and Random Forest with randomForest() function. In both models, we split data set to training (70 %) and validation (30 %) set for cross validation. We build the models on the training sets. 
+
+### Cross Validation
+
+**In our cross validation routine we apply prediction models on the validation data set. The error rate obtained with this procedure is the out of sample error. We calculate accuracy and out of sample error to see which model performes better. Once the most accurate model is chosen, it will be applied on the testSet.**
+
+
+```{r split_training}
+  set.seed(12345)
+  splitTrain = createDataPartition(y = trainExplore$classe, p = 0.7, list = FALSE)
+  trainSet = trainExplore[splitTrain, ]
+  validSet = trainExplore[-splitTrain, ]
+```  
+
+### Model 1: Classification Tree
+
+We use rpart() function to build the decision tree and
+we test the performance of our model on the validation set by cross validation:
+
+```{r model1}
+  library(rpart)
+  library(rpart.plot)
+  model1 <- rpart(classe ~ ., data=trainSet, method="class")
+  rpart.plot(model1, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+
+
+Figure shows the classification tree calculated by rpart() function.
+
+```{r predict1}
+  confus <- confusionMatrix(validSet$classe, predict(model1,validSet,type="class"))
+  confus$table
+```
+
+Confusion matrix shows that a substantial number of predictions is misclassified.
+
+With postResample() function we obtain that the accuracy of our model is:
+
+```{r accuracy}
+  accuracy <- confus$overall[1]
+  accuracy
+```  
+
+Low accuracy is the reason why many predictions are misclassified.
+
+The out of sample error is 1-accuracy:
+
+```{r out_of_sample_error}
+  out_of_sample_error_1 <- 1 - accuracy[[1]]
+  out_of_sample_error_1
+```
+
+**The out of sample error of `r  100* out_of_sample_error_1` % is very large.**
+
+### Model 2: Random Forest
+
+Our second model is the random forest model obtained with randomForest() function:
+
+```{r random_forest, message=FALSE}
+  model2 <- randomForest(classe ~. , data=trainSet, method="class")
+```
+
+```{r plot}
+  plot(model2)
+```
+
+Figure shows that the error falls substantially when the number of built trees increases above 50.
+
+```{r random_forest_table}
+  prediction2 <- predict(model2,validSet,type="class")
+  confus <- confusionMatrix(validSet$classe, prediction2)
+  confus$table
+```
+
+Confusion matrix shows that almost all predictions are properly classified.
+
+The accuracy of random forest model is:
+
+```{r accuracy2}
+  accuracy <- confus$overall[1]
+  accuracy
+```  
+
+Accuracy of random forest model is much larger than in the classification tree model.
+
+```{r out_of_sample_error2}
+  out_of_sample_error_2 <- 1 - accuracy[[1]]
+  out_of_sample_error_2
+```
+
+**The out of sample error is `r 100 * out_of_sample_error_2` %. This is a very small value so the random forest model performs much better than the classification tree model.**
+
+**We chose random forest model as the best model.**
+
+### Predicting Test Cases
+
+We apply our best model (random forest) to the testSet.
+```{r final_prediction}
+  finalPrediction <- predict(model2, testSet, type="class")
+  finalPrediction
+```
